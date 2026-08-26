@@ -619,3 +619,55 @@ describe('`as` on an extension chain (styled-components parity)', () => {
     expect(getCss()).toContain('color:teal;')
   })
 })
+
+describe('`as`={StyledComponent} handoff: the as-target applies its OWN config (SC parity)', () => {
+  // Ground truth verified against real styled-components 6.4: inner attrs
+  // apply and OVERRIDE outer-forwarded values, outer attrs forward through,
+  // and the INNER chain's shouldForwardProp governs the host element.
+  it('as-target attrs + shouldForwardProp apply; outer attrs forward through', () => {
+    const Outer = createStyled('div', {
+      componentId: 'sc-ah-outer',
+      attrs: [{ 'data-outer': 'y', title: 'outer' }],
+    })`color: red;`
+    const AsT = createStyled('button', {
+      componentId: 'sc-ah-inner',
+      attrs: [{ title: 'inner', type: 'button' }],
+      shouldForwardProp: p => p !== 'data-blocked',
+    })`margin: 2px;`
+    render(React.createElement(Outer, { as: AsT, 'data-blocked': 'x', 'data-pass': 'ok' }, 'z'))
+    const el = container.querySelector('button')
+    expect(el).not.toBeNull() // as swapped the host
+    expect(el.className).toContain('sc-ah-outer')
+    expect(el.className).toContain('sc-ah-inner')
+    expect(el.getAttribute('title')).toBe('inner') // inner attrs override outer's
+    expect(el.getAttribute('type')).toBe('button') // inner attrs applied at all
+    expect(el.getAttribute('data-outer')).toBe('y') // outer attrs forwarded through
+    expect(el.hasAttribute('data-blocked')).toBe(false) // INNER sfp governs the host
+    expect(el.getAttribute('data-pass')).toBe('ok')
+    expect(getCss()).toContain('color:red;')
+    expect(getCss()).toContain('margin:2px;')
+  })
+
+  it("outer forwardProps shapes the handoff; inner chain still styles + filters", () => {
+    const Outer = createStyled('div', {
+      componentId: 'sc-ah-fwd',
+      forwardProps: ({ title, ...rest }) => rest, // outer strips title at ITS boundary
+    })`color: teal;`
+    const AsT = createStyled('button', { componentId: 'sc-ah-fwd-t' })`margin: 4px;`
+    render(React.createElement(Outer, { as: AsT, title: 'gone', 'data-keep': '1' }, 'kid'))
+    const el = container.querySelector('button')
+    expect(el.hasAttribute('title')).toBe(false) // stripped by outer fwd at handoff
+    expect(el.getAttribute('data-keep')).toBe('1')
+    expect(el.textContent).toBe('kid') // children preserved across the handoff
+    expect(el.className).toContain('sc-ah-fwd')
+    expect(el.className).toContain('sc-ah-fwd-t')
+  })
+
+  it('as={Self} terminates (as consumed at handoff)', () => {
+    const Self = createStyled('span', { componentId: 'sc-ah-self' })`color: plum;`
+    render(React.createElement(Self, { as: Self }, 's'))
+    const el = container.querySelector('span')
+    expect(el.className).toContain('sc-ah-self')
+    expect(el.textContent).toBe('s')
+  })
+})

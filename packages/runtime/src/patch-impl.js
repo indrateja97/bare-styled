@@ -145,10 +145,14 @@ function resolveDescriptor(type, props, sfp, fwd) {
   const base = type.component
   const chainBase = isDescriptor(base)
   const target = chainBase ? base : p.as || base
+  // An `as`-consumed DESCRIPTOR is a NEW chain root, not the next link of
+  // this chain (styled-components parity: the as-target applies its OWN
+  // attrs / shouldForwardProp / forwardProps). unwrap re-enters it.
+  const hand = !chainBase && target !== base && isDescriptor(target)
 
-  // isFinal (host tag or non-descriptor component) is only needed on the fwd
-  // path — keep it off the common per-element path.
-  if (fwd && (typeof target === 'string' || !isDescriptor(target))) {
+  // fwd applies at this chain's final target: a host tag, a non-descriptor
+  // component, or the handoff boundary (what the as-target receives).
+  if (fwd && (hand || typeof target === 'string' || !isDescriptor(target))) {
     const shaped = fwd(p) || EMPTY
     const next = {}
     for (const key in shaped) {
@@ -161,12 +165,12 @@ function resolveDescriptor(type, props, sfp, fwd) {
     }
     if ('children' in p) next.children = p.children
     next.className = styleClasses + (shaped.className ? ' ' + shaped.className : '')
-    return { type: target, props: next }
+    return { type: target, props: next, hand }
   }
 
   const className = styleClasses + (p.className ? ' ' + p.className : '')
   if (typeof target === 'string') {
-    return { type: target, props: buildHostProps(p, className, sfp, target) }
+    return { type: target, props: buildHostProps(p, className, sfp, target), hand: false }
   }
   // Component target: forward all props + the className, which the component
   // is expected to spread onto its host node. `as` is dropped once consumed
@@ -180,7 +184,7 @@ function resolveDescriptor(type, props, sfp, fwd) {
     next[key] = p[key]
   }
   next.className = className
-  return { type: target, props: next }
+  return { type: target, props: next, hand }
 }
 
 // Resolve a descriptor (and unwrap a descriptor-wrapping-descriptor chain) to
@@ -195,7 +199,13 @@ function unwrap(type, props) {
   const sfp = type._sfp
   const fwd = type._fwd
   let r = resolveDescriptor(type, p, sfp, fwd)
-  while (isDescriptor(r.type)) r = resolveDescriptor(r.type, r.props, sfp, fwd)
+  while (isDescriptor(r.type)) {
+    // Handoff: an `as`-swapped descriptor re-enters as its own chain root so
+    // ITS attrs/sfp/fwd apply (styled-components parity). `as` was stripped
+    // at consumption, so this terminates even for as={Self}.
+    if (r.hand) return unwrap(r.type, r.props)
+    r = resolveDescriptor(r.type, r.props, sfp, fwd)
+  }
   return r
 }
 
