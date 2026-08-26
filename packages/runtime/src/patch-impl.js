@@ -138,7 +138,13 @@ function styleClassesFor(type, props) {
 function resolveDescriptor(type, props, sfp, fwd) {
   const p = props || EMPTY
   const styleClasses = styleClassesFor(type, p)
-  const target = p.as || type.component
+  // `as` swaps the FINAL render target of the whole chain (styled-components
+  // parity): while the base is itself a descriptor, keep descending through
+  // it — every template in the chain still applies — and let `as` ride along
+  // in props until the last level consumes it.
+  const base = type.component
+  const chainBase = isDescriptor(base)
+  const target = chainBase ? base : p.as || base
 
   // isFinal (host tag or non-descriptor component) is only needed on the fwd
   // path — keep it off the common per-element path.
@@ -162,13 +168,16 @@ function resolveDescriptor(type, props, sfp, fwd) {
   if (typeof target === 'string') {
     return { type: target, props: buildHostProps(p, className, sfp, target) }
   }
-  // Component target: forward all props (minus `as`) + the className, which the
-  // component is expected to spread onto its host node. Copy-skip loop instead
-  // of Object.assign + delete: this runs per render of every styled(Component)
-  // element, and `delete` transitions the object to dictionary mode.
+  // Component target: forward all props + the className, which the component
+  // is expected to spread onto its host node. `as` is dropped once consumed
+  // (final level) but forwarded through intermediate chain levels. Copy-skip
+  // loop instead of Object.assign + delete: this runs per render of every
+  // styled(Component) element, and `delete` transitions the object to
+  // dictionary mode.
   const next = {}
   for (const key in p) {
-    if (key !== 'as') next[key] = p[key]
+    if (key === 'as' && !chainBase) continue
+    next[key] = p[key]
   }
   next.className = className
   return { type: target, props: next }

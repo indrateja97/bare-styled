@@ -585,3 +585,37 @@ describe('forwardRef fallback detection (fiber-win diagnostics)', () => {
   })
 })
 
+
+describe('`as` on an extension chain (styled-components parity)', () => {
+  // SC semantics (verified against real styled-components 6.4): `as` swaps the
+  // FINAL render target of the whole chain — every template in the chain still
+  // applies. It must not consume `as` at the first level and skip the base.
+  function Btn({ className, children }) { return React.createElement('button', { className }, children) }
+
+  it('as={StyledComponent}: base + outer + as-target styles ALL apply', () => {
+    const Base = createStyled(Btn, { componentId: 'sc-as-base' })`padding: 4px;`
+    const Outer = createStyled(Base, { componentId: 'sc-as-outer' })`color: red;`
+    const AsTarget = createStyled(Btn, { componentId: 'sc-as-target' })`margin: 2px;`
+    render(React.createElement(Outer, { as: AsTarget }, 'x'))
+    const el = container.querySelector('button')
+    expect(el.className).toContain('sc-as-outer')
+    expect(el.className).toContain('sc-as-base') // the level `as` used to skip
+    expect(el.className).toContain('sc-as-target')
+    expect(getCss()).toContain('padding:4px;')
+    expect(getCss()).toContain('color:red;')
+    expect(getCss()).toContain('margin:2px;')
+  })
+
+  it('as="tag" on a chain: both chain levels style the swapped host tag', () => {
+    const Base = createStyled('div', { componentId: 'sc-ast-base' })`padding: 6px;`
+    const Outer = createStyled(Base, { componentId: 'sc-ast-outer' })`color: teal;`
+    render(React.createElement(Outer, { as: 'section' }, 'x'))
+    const el = container.querySelector('section')
+    expect(el).not.toBeNull()
+    expect(el.className).toContain('sc-ast-base')
+    expect(el.className).toContain('sc-ast-outer')
+    expect(el.hasAttribute('as')).toBe(false)
+    expect(getCss()).toContain('padding:6px;')
+    expect(getCss()).toContain('color:teal;')
+  })
+})
