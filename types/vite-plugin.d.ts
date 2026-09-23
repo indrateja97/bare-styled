@@ -26,6 +26,13 @@ export interface BareStyledOptions {
   runtimeImportPath?: string;
   /** Prefix for generated componentIds (multi-app disambiguation). */
   namespace?: string;
+  /**
+   * Mix a hash of each template's css into its componentId so an edited template
+   * gets a new id (and its new rule) on HMR, instead of the runtime reusing the
+   * rule already registered under the old id. Defaults to on for `vite serve`
+   * with HMR enabled, off for builds.
+   */
+  hmr?: boolean;
 }
 
 /**
@@ -40,6 +47,10 @@ export interface BareStyledOptions {
 export function bareStyled(options?: BareStyledOptions): {
   name: string;
   enforce: 'pre';
+  configResolved(config: {
+    command: 'build' | 'serve';
+    server: { hmr?: unknown };
+  }): void;
   transform(
     code: string,
     id: string
