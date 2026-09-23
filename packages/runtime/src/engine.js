@@ -8,6 +8,19 @@ const sheet = require('./sheet')
 
 const EMPTY = {}
 
+// HMR: a static rule can change under an unchanged componentId when a value it
+// substituted at definition (e.g. an imported theme token) changes. In dev the
+// sheet dedups static rules by componentId + css, so the re-evaluated
+// descriptor's rule lands in its newer group and wins the cascade.
+// Read NODE_ENV directly (no `typeof process` guard): bundlers replace the
+// expression, but not `process` itself, which is undefined in the browser.
+let DEV = false
+try {
+  DEV = process.env.NODE_ENV !== 'production'
+} catch (e) {
+  /* no bundler replacement and no process: treat as production */
+}
+
 // Vendor prefixing is OPT-IN (styled-components v6 parity). Pair with the
 // plugin's `vendorPrefixes: true` so build-time compiled rules match.
 let vendorPrefixes = false
@@ -214,7 +227,10 @@ function drainIdle(deadline) {
     const item = pendingStatic.pop()
     // Skip anything a render already registered (or that we already precomputed).
     if (!staticRegistered.has(item.componentId) && !precomputed.has(item.componentId)) {
-      precomputed.set(item.componentId, serializeStatic(item.componentId, item.parts))
+      precomputed.set(item.componentId, {
+        parts: item.parts,
+        rules: serializeStatic(item.componentId, item.parts),
+      })
     }
   }
   if (pendingStatic.length) {
@@ -246,17 +262,24 @@ function registerStatic(descriptor) {
   if (descriptor._regGen === generation) return
   descriptor._regGen = generation
   const componentId = descriptor.componentId
-  if (staticRegistered.has(componentId)) return
+  if (!DEV && staticRegistered.has(componentId)) return
   staticRegistered.add(componentId)
   let css
   if (descriptor.css != null) {
     css = descriptor.css // plugin's build-time precompiled rule string
   } else {
-    css = precomputed.get(componentId)
-    if (css === undefined) css = serializeStatic(componentId, descriptor.parts)
-    else precomputed.delete(componentId) // now in the sheet; free the interim copy
+    // The cache is keyed by componentId, so it must belong to THIS descriptor's
+    // parts — an HMR re-evaluation queues a new descriptor under the same id.
+    const cached = precomputed.get(componentId)
+    if (cached !== undefined && cached.parts === descriptor.parts) {
+      css = cached.rules
+      precomputed.delete(componentId) // now in the sheet; free the interim copy
+    } else {
+      css = serializeStatic(componentId, descriptor.parts)
+    }
   }
-  sheet.registerRule(descriptor.group, componentId, css)
+  const key = DEV ? componentId + '/' + hash(Array.isArray(css) ? css.join('') : css) : componentId
+  sheet.registerRule(descriptor.group, key, css)
 }
 
 // Definition-order group counter: a base is always defined before its extender,
@@ -342,6 +365,13 @@ function substituteStaticVars(skeleton, vars) {
   return { skeleton: out, fns }
 }
 
+// Seed for a skeleton component's value classes. In dev it also covers the
+// skeleton after static substitution, so a changed imported value (same
+// componentId, same fn values) still yields a new class.
+function skeletonSeed(componentId, skeleton) {
+  return DEV ? componentId + '/' + hash(skeleton) : componentId
+}
+
 // Class + rule for a skeleton component's resolved var values. The cache key is
 // the SHORT joined value string (not a full CSS body); the miss path is a
 // segment join — no stylis. Values containing braces could break out of the
@@ -356,7 +386,7 @@ function classForVars(descriptor, values) {
   for (let i = 1; i < values.length; i++) key += '\x1f' + values[i]
   const cached = descriptor._cache.get(key)
   if (cached !== undefined) return cached
-  const cls = 'bs-' + hash(descriptor.componentId + '\x1f' + key)
+  const cls = 'bs-' + hash(descriptor._varSeed + '\x1f' + key)
   descriptor._cache.set(key, cls)
 
   const seg = descriptor._segments
@@ -389,6 +419,7 @@ module.exports = {
   classForVars,
   parseSkeleton,
   substituteStaticVars,
+  skeletonSeed,
   isStatic,
   registerStatic,
   queueStatic,
