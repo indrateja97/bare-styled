@@ -20,9 +20,7 @@ export const useNamespace = state => {
   return namespace ? `${namespace}__` : ''
 }
 
-// Mixes a hash of each template's css into its componentId, so an edited
-// template re-registers under a new id instead of hitting the runtime's
-// once-per-id dedup. Dev-server only: ids then change on every edit.
+// Dev server only: appends a css hash to componentIds so edits re-register.
 export const useHmr = state => getOption(state, 'hmr', false)
 
 export const useRuntimeImportPath = state =>

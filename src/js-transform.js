@@ -306,8 +306,7 @@ const getDisplayName = (t, componentPath, state) => {
     : prefixLeadingDigit(blockName)
 }
 
-// With hmr, precompiled templates hash their RESOLVED css, not their source:
-// a same-file `${Other}` selector or a module const can change it untouched.
+// Resolved css, not source: a `${Other}` selector or module const can change it.
 const nextComponentId = (templatePath, analysis, state) => {
   const id = state.file.get(POSITION) || 0
   state.file.set(POSITION, id + 1)

@@ -186,9 +186,7 @@ describe('skeleton mode (build-compiled structure, render = substitution)', () =
   })
 })
 
-// HMR re-evaluates a module whose own source is unchanged when an import it
-// substituted at definition (e.g. a theme token) changed: the new descriptor
-// keeps its componentId, so the rule must not be deduped by componentId alone.
+// An imported value (e.g. a theme token) changed; the module source did not.
 describe('HMR: same componentId, changed imported value', () => {
   const lastIndex = (css, s) => css.lastIndexOf(s)
 

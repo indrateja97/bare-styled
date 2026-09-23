@@ -8,18 +8,11 @@ const sheet = require('./sheet')
 
 const EMPTY = {}
 
-// HMR: a static rule can change under an unchanged componentId when a value it
-// substituted at definition (e.g. an imported theme token) changes. In dev the
-// sheet dedups static rules by componentId + css, so the re-evaluated
-// descriptor's rule lands in its newer group and wins the cascade.
-// Read NODE_ENV directly (no `typeof process` guard): bundlers replace the
-// expression, but not `process` itself, which is undefined in the browser.
+// No `typeof process` guard: bundlers replace the expression, not `process`.
 let DEV = false
 try {
   DEV = process.env.NODE_ENV !== 'production'
-} catch (e) {
-  /* no bundler replacement and no process: treat as production */
-}
+} catch (e) {}
 
 // Vendor prefixing is OPT-IN (styled-components v6 parity). Pair with the
 // plugin's `vendorPrefixes: true` so build-time compiled rules match.
@@ -268,8 +261,7 @@ function registerStatic(descriptor) {
   if (descriptor.css != null) {
     css = descriptor.css // plugin's build-time precompiled rule string
   } else {
-    // The cache is keyed by componentId, so it must belong to THIS descriptor's
-    // parts — an HMR re-evaluation queues a new descriptor under the same id.
+    // HMR re-evaluation can queue a new descriptor under the same id.
     const cached = precomputed.get(componentId)
     if (cached !== undefined && cached.parts === descriptor.parts) {
       css = cached.rules
@@ -278,6 +270,7 @@ function registerStatic(descriptor) {
       css = serializeStatic(componentId, descriptor.parts)
     }
   }
+  // Dev: an imported value (e.g. a theme token) can change the css under the same id.
   const key = DEV ? componentId + '/' + hash(Array.isArray(css) ? css.join('') : css) : componentId
   sheet.registerRule(descriptor.group, key, css)
 }
@@ -365,9 +358,7 @@ function substituteStaticVars(skeleton, vars) {
   return { skeleton: out, fns }
 }
 
-// Seed for a skeleton component's value classes. In dev it also covers the
-// skeleton after static substitution, so a changed imported value (same
-// componentId, same fn values) still yields a new class.
+// Dev: also hash the substituted skeleton, so a changed imported value gets a new class.
 function skeletonSeed(componentId, skeleton) {
   return DEV ? componentId + '/' + hash(skeleton) : componentId
 }
